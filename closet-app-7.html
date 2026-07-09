@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Rail — Closet Cataloging</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<style>
+  :root{
+    --ink:#1C2230;--paper:#F7F4EE;--paper-dim:#EDE9E0;
+    --brass:#B8893F;--brass-dark:#96702E;--clay:#9C5B47;
+    --ash:#6E7280;--line:#D9D4C7;--ok:#4C7A5E;--radius:2px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:'Fraunces',serif;margin:0;font-weight:600;}
+  button{font-family:inherit;cursor:pointer;}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
+  @media(prefers-reduced-motion:reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important;}}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  #setupBanner{background:#1C2230;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;}
+  #setupBanner a{color:var(--brass);text-decoration:none;}
+  .setup-pill{background:var(--brass);color:#fff;border:none;padding:8px 16px;border-radius:3px;font-size:13px;white-space:nowrap;}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(28,34,48,.55);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}
+  .modal-backdrop.hidden{display:none;}
+  .modal{background:var(--paper);border-radius:6px;padding:32px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);margin:auto;}
+  .modal h2{font-size:22px;margin-bottom:6px;}
+  .modal p{color:var(--ash);font-size:13px;line-height:1.6;margin:0 0 18px;}
+  .modal label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;letter-spacing:.04em;}
+  .modal input{width:100%;border:1px solid var(--line);border-radius:3px;padding:10px 12px;font-size:13px;font-family:'IBM Plex Mono',monospace;margin-bottom:14px;background:#fff;}
+  .modal .code-block{background:#1C2230;color:#E8D9BE;border-radius:4px;padding:14px 16px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.7;margin-bottom:18px;white-space:pre-wrap;word-break:break-all;position:relative;}
+  .copy-btn{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:3px;font-size:11px;padding:4px 9px;}
+  .copy-btn:hover{background:rgba(255,255,255,.22);}
+  .step-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px;}
+  .step-num{background:var(--brass);color:#fff;width:22px;height:22px;border-radius:50%;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+  .step-text{font-size:13px;line-height:1.5;color:#3c4250;}
+  .step-text a{color:var(--brass-dark);}
+
+  .app{max-width:1080px;margin:0 auto;padding:0 24px 80px;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:28px 0 18px;border-bottom:1px solid var(--line);margin-bottom:32px;flex-wrap:wrap;gap:12px;}
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand h1{font-size:26px;}
+  .brand span{font-size:11px;color:var(--ash);}
+  .rail-nav{display:flex;gap:0;position:relative;}
+  .rail-nav::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line);z-index:0;}
+  .rail-step{position:relative;z-index:1;background:var(--paper);border:1px solid var(--line);border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ash);margin-left:14px;transition:all .2s;}
+  .rail-step.active{border-color:var(--brass);color:var(--brass-dark);box-shadow:0 0 0 3px rgba(184,137,63,.15);}
+  .db-status{font-size:12px;display:flex;align-items:center;gap:6px;color:var(--ash);}
+  .db-dot{width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;}
+  .db-dot.connected{background:var(--ok);}
+  .db-dot.error{background:var(--clay);}
+  .user-chip{display:flex;align-items:center;gap:10px;font-size:13px;}
+  .user-chip .role-tag{background:var(--paper-dim);padding:3px 9px;border-radius:10px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--brass-dark);}
+  .logout-btn{background:none;border:1px solid var(--line);border-radius:3px;padding:6px 12px;font-size:12px;color:var(--ash);}
+  .logout-btn:hover{border-color:var(--clay);color:var(--clay);}
+
+  .view{display:none;}
+  .view.active{display:block;animation:fade .35s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;}}
+
+  /* Entry screen (replaces login) */
+  .entry-wrap{max-width:460px;margin:70px auto;padding:0 20px;text-align:center;}
+  .entry-wrap h1{font-size:32px;}
+  .entry-wrap p{color:var(--ash);font-size:14px;margin-top:10px;margin-bottom:34px;}
+  .entry-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .entry-card{
+    border:1px solid var(--line);background:#fff;border-radius:6px;padding:26px 18px;text-align:left;
+    transition:border-color .15s, transform .1s;
+  }
+  .entry-card:hover{border-color:var(--brass);transform:translateY(-2px);}
+  .entry-card h3{font-size:17px;margin-bottom:6px;}
+  .entry-card p{font-size:12px;color:var(--ash);margin:0;line-height:1.5;}
+  .entry-form{display:none;text-align:left;margin-top:22px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:24px;}
+  .entry-form.active{display:block;}
+  .entry-form label{display:block;font-size:12px;font-weight:600;margin-bottom:5px;}
+  .entry-form input{width:100%;border:1px solid var(--line);border-radius:3px;padding:10px 12px;font-size:14px;margin-bottom:14px;font-family:inherit;background:#fff;}
+  .entry-form .back-link{background:none;border:none;color:var(--ash);font-size:12px;margin-bottom:14px;padding:0;}
+  .entry-form .back-link:hover{color:var(--clay);}
+
+  .ai-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ash);margin-bottom:16px;}
+  .hero{margin-bottom:28px;}
+  .hero h2{font-size:30px;line-height:1.15;max-width:560px;}
+  .hero p{color:var(--ash);max-width:540px;margin-top:10px;font-size:15px;line-height:1.5;}
+  .category-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:28px;}
+  .cat-btn{border:1px solid var(--line);background:#fff;padding:14px 10px;border-radius:var(--radius);text-align:left;font-size:13px;font-weight:500;display:flex;flex-direction:column;gap:6px;transition:border-color .15s;}
+  .cat-btn:hover{border-color:var(--brass);}
+  .cat-btn.selected{border-color:var(--brass);background:#FBF6EC;}
+  .cat-btn .num{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ash);}
+  .uploader{border:1.5px dashed var(--line);border-radius:6px;padding:46px 24px;text-align:center;background:#fff;transition:border-color .15s,background .15s;}
+  .uploader.drag{border-color:var(--brass);background:#FBF6EC;}
+  .uploader.disabled{opacity:.5;}
+  .uploader h3{font-size:17px;margin-bottom:8px;}
+  .uploader p{color:var(--ash);font-size:13px;margin:0 0 18px;}
+  .btn{display:inline-flex;align-items:center;gap:8px;background:var(--ink);color:#fff;border:none;padding:11px 22px;border-radius:3px;font-size:14px;font-weight:500;}
+  .btn:hover{background:#2A3142;}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+  .btn.ghost:hover{border-color:var(--ink);}
+  .btn.brass{background:var(--brass);}
+  .btn.brass:hover{background:var(--brass-dark);}
+  .btn.full{width:100%;justify-content:center;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .tip-box{margin-top:20px;display:flex;gap:12px;align-items:flex-start;background:var(--paper-dim);border-radius:4px;padding:14px 16px;font-size:13px;color:#3c4250;}
+  .batch-list{margin-top:24px;}
+  .batch-item{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:4px;background:#fff;margin-bottom:8px;}
+  .batch-item img{width:52px;height:52px;object-fit:cover;border-radius:3px;}
+  .batch-item .meta{flex:1;}
+  .batch-item .meta .name{font-size:13px;font-weight:500;}
+  .batch-item .meta .sub{font-size:12px;color:var(--ash);}
+  .remove-x{background:none;border:none;color:var(--ash);font-size:18px;padding:4px;}
+  .remove-x:hover{color:var(--clay);}
+  .sticky-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:28px;padding-top:18px;border-top:1px solid var(--line);}
+
+  .processing{text-align:center;padding:80px 20px;}
+  .loom{width:64px;height:64px;margin:0 auto 24px;border:2px solid var(--line);border-top-color:var(--brass);border-radius:50%;animation:spin .9s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .processing h3{font-size:18px;margin-bottom:8px;}
+  .processing p{color:var(--ash);font-size:13px;}
+
+  .review-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;flex-wrap:wrap;gap:8px;}
+  .review-header h2{font-size:24px;}
+  .review-sub{color:var(--ash);font-size:13px;margin-bottom:24px;}
+  .item-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px;}
+  .item-card{border:1px solid var(--line);border-radius:5px;background:#fff;overflow:hidden;}
+  .item-card.rejected{opacity:.4;}
+  .item-thumb{aspect-ratio:1;background:#fff;position:relative;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line);}
+  .conf-badge{position:absolute;top:8px;left:8px;font-size:10px;padding:3px 7px;border-radius:10px;font-family:'IBM Plex Mono',monospace;}
+  .conf-high{background:#E7F1EA;color:var(--ok);}
+  .conf-low{background:#FBF0DE;color:var(--brass-dark);}
+  .item-body{padding:12px;}
+  .item-body input,.item-body select{width:100%;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:3px;margin-bottom:7px;font-family:inherit;background:#fff;}
+  .item-footer{display:flex;justify-content:space-between;gap:6px;padding:0 12px 12px;}
+  .small-link{font-size:12px;background:none;border:none;color:var(--ash);padding:4px;}
+  .small-link:hover{color:var(--clay);}
+  .small-link.restore{color:var(--ok);}
+
+  .closet-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;align-items:center;}
+  .chip{border:1px solid var(--line);background:#fff;padding:6px 13px;border-radius:20px;font-size:12px;color:var(--ash);}
+  .chip.active{border-color:var(--brass);color:var(--brass-dark);background:#FBF6EC;}
+  .search-input{margin-left:auto;border:1px solid var(--line);padding:8px 12px;border-radius:20px;font-size:13px;min-width:180px;font-family:inherit;}
+  .rack{position:relative;margin-bottom:8px;}
+  .rack-bar{height:6px;background:linear-gradient(180deg,#C9A35E,var(--brass-dark));border-radius:3px;box-shadow:0 2px 4px rgba(0,0,0,.15);}
+  .closet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:22px 16px;margin-top:8px;}
+  .hook{width:2px;height:14px;background:var(--ash);margin:0 auto;}
+  .garment-card{background:#fff;border:1px solid var(--line);border-radius:4px;text-align:center;transition:transform .15s;}
+  .garment-card:hover{transform:translateY(2px);}
+  .garment-thumb{aspect-ratio:1;display:flex;align-items:center;justify-content:center;padding:10px;border-bottom:1px solid var(--line);}
+  .garment-thumb img{max-width:100%;max-height:100%;object-fit:contain;}
+  .garment-info{padding:9px 10px 12px;}
+  .garment-info .cat{font-size:10px;color:var(--brass-dark);font-family:'IBM Plex Mono',monospace;}
+  .garment-info .nm{font-size:13px;font-weight:500;margin-top:2px;}
+  .empty-state{text-align:center;padding:60px 20px;color:var(--ash);}
+  .empty-state h3{color:var(--ink);font-size:18px;margin-bottom:8px;}
+  .badge-count{background:var(--ink);color:#fff;font-size:11px;border-radius:10px;padding:2px 8px;font-family:'IBM Plex Mono',monospace;}
+
+  .client-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
+  .client-card{border:1px solid var(--line);background:#fff;border-radius:5px;padding:18px;text-align:left;}
+  .client-card:hover{border-color:var(--brass);}
+  .client-card .cname{font-size:16px;font-family:'Fraunces',serif;font-weight:600;}
+  .client-card .ccount{font-size:12px;color:var(--ash);margin-top:4px;}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:4px;font-size:13px;z-index:200;animation:fade .3s ease;display:none;}
+  .toast.show{display:block;}
+</style>
+</head>
+<body>
+
+<div id="setupBanner">
+  <div><strong>⚡ One-time setup needed</strong> &nbsp;—&nbsp; Connect a free Supabase database so closets save across devices.
+  <a href="https://supabase.com" target="_blank">Create free account →</a></div>
+  <button class="setup-pill" onclick="openSetup()">Connect database</button>
+</div>
+
+<div class="modal-backdrop hidden" id="setupModal">
+  <div class="modal">
+    <h2>Connect your free database</h2>
+    <p>Takes about 5 minutes, free, no credit card. Follow these steps exactly:</p>
+    <div class="step-row"><div class="step-num">1</div><div class="step-text">Go to <a href="https://supabase.com" target="_blank">supabase.com</a> → <strong>Start your project</strong> → sign up free.</div></div>
+    <div class="step-row"><div class="step-num">2</div><div class="step-text">Click <strong>New project</strong>, name it <em>the-rail</em>, set a password, create it, wait ~1 minute.</div></div>
+    <div class="step-row"><div class="step-num">3</div><div class="step-text">Left sidebar → <strong>SQL Editor</strong> → paste this → click <strong>Run</strong>. If tables already exist from before, this clears them first.</div></div>
+    <div class="code-block" id="sqlBlock">drop table if exists closet_items cascade;
+drop table if exists profiles cascade;
+
+create table closet_items (
+  id bigserial primary key,
+  created_at timestamptz default now(),
+  client_name text not null,
+  name text,
+  category text,
+  color text,
+  image_data text,
+  confidence float
+);
+
+alter table closet_items enable row level security;
+
+create policy "Open access"
+  on closet_items for all
+  using (true)
+  with check (true);<button class="copy-btn" onclick="copySql()">Copy</button></div>
+    <div class="step-row"><div class="step-num">4</div><div class="step-text">Left sidebar → gear icon <strong>Settings</strong> → <strong>API</strong> (or "Data API"). Copy the <strong>Project URL</strong>.</div></div>
+    <label>Supabase Project URL</label>
+    <input type="text" id="sbUrl" placeholder="https://xxxxxxxxxxxx.supabase.co">
+    <div class="step-row"><div class="step-num">5</div><div class="step-text">Same page — copy the <strong>anon / public</strong> key.</div></div>
+    <label>Supabase Anon Key</label>
+    <input type="text" id="sbKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6...">
+    <div style="display:flex;gap:10px;margin-top:6px;">
+      <button class="btn brass" onclick="saveConfig()">Save & connect</button>
+      <button class="btn ghost" onclick="closeSetup()">Cancel</button>
+    </div>
+    <p id="configError" style="color:var(--clay);margin-top:10px;font-size:13px;display:none;"></p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ENTRY SCREEN (no login/password — just pick a role and a name) -->
+<div class="view active" id="view-entry">
+  <div class="entry-wrap">
+    <h1>The Rail</h1>
+    <p>Choose how you're using the app today.</p>
+    <div class="entry-cards">
+      <button class="entry-card" onclick="showEntryForm('client')">
+        <h3>I'm a client</h3>
+        <p>Catalog your closet so your stylist can see what you own.</p>
+      </button>
+      <button class="entry-card" onclick="showEntryForm('stylist')">
+        <h3>I'm the stylist</h3>
+        <p>Browse everything your clients have catalogued.</p>
+      </button>
+    </div>
+
+    <div class="entry-form" id="clientForm">
+      <button class="back-link" onclick="hideEntryForms()">&larr; Back</button>
+      <label>Your name</label>
+      <input type="text" id="clientNameInput" placeholder="e.g. Jane Smith">
+      <button class="btn brass full" onclick="enterAsClient()">Continue to my closet</button>
+    </div>
+
+    <div class="entry-form" id="stylistForm">
+      <button class="back-link" onclick="hideEntryForms()">&larr; Back</button>
+      <label>Your name</label>
+      <input type="text" id="stylistNameInput" placeholder="e.g. Mom">
+      <button class="btn brass full" onclick="enterAsStylist()">View all clients</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div class="app" id="mainApp" style="display:none;">
+  <div class="topbar">
+    <div class="brand">
+      <h1>The Rail</h1>
+      <span class="mono">CLOSET CATALOGING</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+      <div class="db-status"><span class="db-dot" id="dbDot"></span><span id="dbLabel">Not connected</span></div>
+      <div class="user-chip">
+        <span id="userName"></span>
+        <span class="role-tag" id="userRole"></span>
+        <button class="logout-btn" onclick="logout()">Switch</button>
+      </div>
+      <div class="rail-nav" id="railNav"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-upload">
+    <div class="hero">
+      <h2>A few items at a time.<br>Get a closet back.</h2>
+      <p>Photograph 1–3 items per shot, spaced apart on a plain surface. Our AI finds each one, removes its background, and guesses its category — you just glance and confirm.</p>
+    </div>
+    <div class="ai-status" id="aiStatus">
+      <span class="db-dot" id="aiDot"></span>
+      <span id="aiStatusLabel">Loading AI classifier…</span>
+    </div>
+    <div class="uploader" id="uploader">
+      <h3>Drop a photo here</h3>
+      <p>or choose a file — JPG/PNG, best with 1–3 items per photo</p>
+      <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+      <button class="btn ghost" id="chooseFileBtn">Choose photo</button>
+    </div>
+    <div class="tip-box">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#9C5B47" stroke-width="1.2"/><path d="M8 7v4M8 5v.5" stroke="#9C5B47" stroke-width="1.2" stroke-linecap="round"/></svg>
+      <span><strong>For the cleanest results:</strong> a few items per photo works much better than a big pile — spread them flat with real gaps between each one, use even daylight, and use a plain surface (a rug or bed with a busy pattern makes it harder to tell items apart from the background). You can upload as many photos as you like, one after another.</span>
+    </div>
+    <div class="batch-list" id="batchList"></div>
+    <div class="sticky-actions">
+      <button class="btn brass" id="processBtn" disabled>Process this batch</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-processing">
+    <div class="processing">
+      <div class="loom"></div>
+      <h3 id="procTitle">Finding items in your photo…</h3>
+      <p id="procSub">This usually takes a few seconds per photo.</p>
+    </div>
+  </div>
+
+  <div class="view" id="view-review">
+    <div class="review-header"><h2>Here's what we found</h2><span class="badge-count mono" id="reviewCount">0 items</span></div>
+    <div class="review-sub">Tap a name or category to fix it. Discard anything that isn't a real item.</div>
+    <div class="item-grid" id="itemGrid"></div>
+    <div class="sticky-actions">
+      <button class="btn ghost" id="backToUploadBtn">Add another batch</button>
+      <button class="btn brass" id="confirmBtn">Save to closet</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-clients">
+    <div class="review-header"><h2>Your clients</h2><span class="badge-count mono" id="clientCount">0 clients</span></div>
+    <div class="review-sub">Select a client to browse their catalogued closet.</div>
+    <div class="client-list" id="clientList"></div>
+  </div>
+
+  <div class="view" id="view-closet">
+    <div class="review-header">
+      <h2 id="closetTitle">The Closet</h2>
+      <span class="badge-count mono" id="closetCount">0 items</span>
+    </div>
+    <div class="review-sub" id="closetSub">Everything cataloged so far.</div>
+    <div class="closet-toolbar" id="closetFilters"></div>
+    <div class="rack"><div class="rack-bar"></div></div>
+    <div id="closetBody"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG
+   ============================================================ */
+let sb=null;
+const STORAGE_KEY='theRailConfig';
+
+const CATEGORIES=[
+  {id:'tops',label:'Tops',n:'01'},{id:'bottoms',label:'Bottoms',n:'02'},
+  {id:'dresses',label:'Dresses',n:'03'},{id:'shoes',label:'Shoes',n:'04'},
+  {id:'bags',label:'Bags',n:'05'},{id:'belts',label:'Belts',n:'06'},
+  {id:'jewelry',label:'Jewelry',n:'07'},{id:'sunglasses',label:'Sunglasses',n:'08'},
+  {id:'accessories',label:'Other',n:'09'},
+];
+const COLOR_GUESSES=['Black','Navy','Camel','Cream','Olive','Burgundy','Charcoal','White','Tan','Sage'];
+function catLabel(id){return CATEGORIES.find(c=>c.id===id)?.label||id;}
+
+function openSetup(){document.getElementById('setupModal').classList.remove('hidden');}
+function closeSetup(){document.getElementById('setupModal').classList.add('hidden');}
+function copySql(){
+  const text=document.getElementById('sqlBlock').innerText.replace('Copy','').trim();
+  navigator.clipboard.writeText(text).then(()=>showToast('SQL copied!'));
+}
+async function saveConfig(){
+  const url=document.getElementById('sbUrl').value.trim();
+  const key=document.getElementById('sbKey').value.trim();
+  const err=document.getElementById('configError');
+  err.style.display='none';
+  if(!url||!key){err.textContent='Please fill in both fields.';err.style.display='block';return;}
+  try{
+    const client=supabase.createClient(url,key);
+    const {error}=await client.from('closet_items').select('id').limit(1);
+    if(error) throw error;
+    localStorage.setItem(STORAGE_KEY,JSON.stringify({url,key}));
+    sb=client;
+    setDbStatus(true);
+    closeSetup();
+    document.getElementById('setupBanner').style.display='none';
+    showToast('Database connected! ✓');
+  }catch(e){
+    err.textContent='Could not connect: '+e.message+'. Double-check your URL/key and that you ran the SQL setup.';
+    err.style.display='block';
+  }
+}
+function setDbStatus(ok){
+  document.getElementById('dbDot').className='db-dot '+(ok?'connected':'error');
+  document.getElementById('dbLabel').textContent=ok?'Database connected':'Not connected';
+}
+function initSupabase(){
+  const saved=localStorage.getItem(STORAGE_KEY);
+  if(!saved) return;
+  try{
+    const {url,key}=JSON.parse(saved);
+    sb=supabase.createClient(url,key);
+    setDbStatus(true);
+    document.getElementById('setupBanner').style.display='none';
+  }catch(e){setDbStatus(false);}
+}
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+/* ============================================================
+   ENTRY (replaces login — just a name + role, no password)
+   ============================================================ */
+let currentProfile=null; // {name, role}
+let selectedClientName=null;
+
+function showEntryForm(role){
+  document.querySelectorAll('.entry-card').forEach(c=>c.style.display='none');
+  document.getElementById('clientForm').classList.toggle('active', role==='client');
+  document.getElementById('stylistForm').classList.toggle('active', role==='stylist');
+}
+function hideEntryForms(){
+  document.querySelectorAll('.entry-card').forEach(c=>c.style.display='');
+  document.getElementById('clientForm').classList.remove('active');
+  document.getElementById('stylistForm').classList.remove('active');
+}
+
+function enterAsClient(){
+  const name=document.getElementById('clientNameInput').value.trim();
+  if(!name){showToast('Please enter your name.');return;}
+  currentProfile={name,role:'client'};
+  selectedClientName=name;
+  enterApp();
+}
+function enterAsStylist(){
+  const name=document.getElementById('stylistNameInput').value.trim();
+  if(!name){showToast('Please enter your name.');return;}
+  currentProfile={name,role:'stylist'};
+  enterApp();
+}
+function enterApp(){
+  document.getElementById('view-entry').classList.remove('active');
+  document.getElementById('mainApp').style.display='block';
+  document.getElementById('userName').textContent=currentProfile.name;
+  document.getElementById('userRole').textContent=currentProfile.role==='stylist'?'STYLIST':'CLIENT';
+  buildNavForRole();
+  if(currentProfile.role==='client'){
+    showView('view-upload');
+  } else {
+    showView('view-clients');
+    loadClientList();
+  }
+}
+function logout(){
+  currentProfile=null;selectedClientName=null;
+  document.getElementById('mainApp').style.display='none';
+  document.getElementById('view-entry').classList.add('active');
+  hideEntryForms();
+  document.getElementById('clientNameInput').value='';
+  document.getElementById('stylistNameInput').value='';
+}
+
+/* ============================================================
+   NAV
+   ============================================================ */
+function buildNavForRole(){
+  const nav=document.getElementById('railNav');
+  nav.innerHTML='';
+  const steps=currentProfile.role==='client'
+    ? [{id:'view-upload',label:'01'},{id:'view-review',label:'02'},{id:'view-closet',label:'03'}]
+    : [{id:'view-clients',label:'01'},{id:'view-closet',label:'02'}];
+  steps.forEach(s=>{
+    const el=document.createElement('div');
+    el.className='rail-step mono';
+    el.textContent=s.label;
+    el.dataset.view=s.id;
+    el.onclick=()=>{
+      if(s.id==='view-review' && pendingItems.length===0) return;
+      if(s.id==='view-closet'){
+        if(currentProfile.role==='stylist' && !selectedClientName){showToast('Pick a client first.');return;}
+        loadCloset();
+      }
+      if(s.id==='view-clients') loadClientList();
+      showView(s.id);
+    };
+    nav.appendChild(el);
+  });
+}
+function showView(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.rail-step').forEach(s=>s.classList.toggle('active', s.dataset.view===id));
+}
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let batchFiles=[];
+let pendingItems=[];
+let closetItems=[];
+let activeFilter='all';
+let idCounter=1;
+
+/* ============================================================
+   UPLOAD
+   ============================================================ */
+const uploader=document.getElementById('uploader');
+const fileInput=document.getElementById('fileInput');
+document.getElementById('chooseFileBtn').onclick=()=>fileInput.click();
+uploader.addEventListener('dragover',e=>{e.preventDefault();uploader.classList.add('drag');});
+uploader.addEventListener('dragleave',()=>uploader.classList.remove('drag'));
+uploader.addEventListener('drop',e=>{
+  e.preventDefault();uploader.classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change',e=>handleFiles(e.target.files));
+function handleFiles(files){
+  Array.from(files).forEach(file=>{
+    if(!file.type.startsWith('image/'))return;
+    batchFiles.push({file,url:URL.createObjectURL(file)});
+  });
+  renderBatchList();
+}
+function renderBatchList(){
+  const list=document.getElementById('batchList');
+  list.innerHTML='';
+  batchFiles.forEach((b,i)=>{
+    const row=document.createElement('div');
+    row.className='batch-item';
+    row.innerHTML=`<img src="${b.url}"><div class="meta"><div class="name">${b.file.name}</div><div class="sub mono">READY TO PROCESS</div></div><button class="remove-x" aria-label="Remove">&times;</button>`;
+    row.querySelector('.remove-x').onclick=()=>{batchFiles.splice(i,1);renderBatchList();};
+    list.appendChild(row);
+  });
+  document.getElementById('processBtn').disabled=batchFiles.length===0;
+}
+document.getElementById('processBtn').onclick=async()=>{
+  showView('view-processing');
+  document.getElementById('procTitle').textContent='Warming up the AI models…';
+  document.getElementById('procSub').textContent='First time takes a bit longer while models download.';
+  await Promise.all([ensureModelLoaded(), ensureBgRemovalLoaded()]);
+  runDetection(batchFiles).then(items=>{
+    pendingItems=items;
+    batchFiles=[];
+    renderBatchList();
+    renderReview();
+    buildNavForRole();
+    showView('view-review');
+  });
+};
+
+/* ============================================================
+   AI CLASSIFICATION — MobileNet running entirely in the browser
+   (via TensorFlow.js, free, no API key, no per-image cost).
+   This is a general-purpose image classifier, not one trained
+   specifically on fashion catalogs, so guesses are a starting
+   point for the human to confirm, not a final answer.
+   ============================================================ */
+let mobilenetModel=null;
+let modelLoading=false;
+
+async function ensureModelLoaded(){
+  if(mobilenetModel || modelLoading) return;
+  modelLoading=true;
+  try{
+    mobilenetModel = await mobilenet.load({version:2, alpha:1.0});
+    document.getElementById('aiDot').className='db-dot connected';
+    document.getElementById('aiStatusLabel').textContent='AI classifier ready';
+  }catch(e){
+    document.getElementById('aiDot').className='db-dot error';
+    document.getElementById('aiStatusLabel').textContent='AI classifier failed to load — categories will need manual entry';
+  }
+  modelLoading=false;
+}
+// Kick off loading as soon as the page is ready, so it's likely
+// warm by the time someone hits "Process this batch".
+window.addEventListener('load', ensureModelLoaded);
+
+/* ============================================================
+   NEURAL BACKGROUND REMOVAL — @imgly/background-removal, a real
+   trained segmentation model (ONNX) that runs entirely in the
+   browser via WebAssembly. Free, no API key, no per-image cost,
+   nothing sent to a server. This gives genuinely clean per-item
+   cutouts instead of a plain color-distance guess.
+   First use downloads the model (a few MB) and caches it in the
+   browser, so the very first item takes longer than the rest.
+   ============================================================ */
+let imglyRemoveBackground=null;
+let bgRemovalReady=false;
+let bgRemovalLoading=false;
+
+async function ensureBgRemovalLoaded(){
+  if(bgRemovalReady || bgRemovalLoading) return;
+  bgRemovalLoading=true;
+  try{
+    const mod = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+    imglyRemoveBackground = mod.default;
+    bgRemovalReady=true;
+  }catch(e){
+    console.warn('Neural background removal unavailable, will fall back to basic cutout.', e);
+    bgRemovalReady=false;
+  }
+  bgRemovalLoading=false;
+}
+window.addEventListener('load', ensureBgRemovalLoaded);
+
+function loadImageFromSrc(src){
+  return new Promise((resolve,reject)=>{
+    const im=new Image();
+    im.onload=()=>resolve(im);
+    im.onerror=reject;
+    im.src=src;
+  });
+}
+
+// Maps MobileNet's ImageNet-trained labels to our closet categories.
+// Keyword matching against the predicted class string, in priority order.
+const CATEGORY_KEYWORDS=[
+  {id:'sunglasses', words:['sunglass','sunglasses','dark glasses','shades']},
+  {id:'shoes', words:['shoe','sandal','loafer','clog','boot','sneaker','running shoe','slipper']},
+  {id:'bags', words:['bag','backpack','purse','handbag','wallet','tote','knapsack','rucksack']},
+  {id:'belts', words:['belt','buckle']},
+  {id:'jewelry', words:['necklace','bracelet','ring','earring','jewel']},
+  {id:'dresses', words:['gown','dress','maillot','sarong','bikini','kimono']},
+  {id:'bottoms', words:['jean','trouser','miniskirt','skirt','short']},
+  {id:'tops', words:['jersey','sweatshirt','cardigan','shirt','sweater','coat','robe','poncho','suit','vest']},
+];
+function mapPredictionToCategory(className){
+  const lower=className.toLowerCase();
+  for(const group of CATEGORY_KEYWORDS){
+    if(group.words.some(w=>lower.includes(w))) return group.id;
+  }
+  return 'accessories';
+}
+
+async function classifyCrop(canvas){
+  if(!mobilenetModel){
+    // Model unavailable — fall back gracefully rather than blocking upload.
+    return {category:'accessories', confidence:0.4};
+  }
+  try{
+    const predictions = await mobilenetModel.classify(canvas, 3);
+    if(!predictions || predictions.length===0) return {category:'accessories', confidence:0.4};
+    const top = predictions[0];
+    return {category: mapPredictionToCategory(top.className), confidence: top.probability};
+  }catch(e){
+    return {category:'accessories', confidence:0.4};
+  }
+}
+
+/* ============================================================
+   DETECTION — real pixel-based segmentation. Detects the actual
+   background color of the photo, finds the true boundaries of
+   each item against it (connected-component analysis), crops
+   tightly to each one, and removes that item's real background
+   pixel-by-pixel rather than applying a blanket filter.
+   Works best on the plain, evenly-lit, spaced-out layouts the
+   tip box already recommends — a patterned surface will confuse
+   any free background-subtraction approach, not just this one.
+   ============================================================ */
+function runDetection(files){
+  return new Promise(resolve=>{
+    document.getElementById('procTitle').textContent='Finding items and identifying categories…';
+    document.getElementById('procSub').textContent=`Analyzing ${files.length} photo${files.length>1?'s':''}`;
+    setTimeout(async()=>{
+      let all=[];
+      for(const f of files) all=all.concat(await detectItemsInImage(f));
+      resolve(all);
+    },300);
+  });
+}
+
+function detectItemsInImage(batchFile){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=async()=>{
+      const {boxes,bgColor}=segmentForegroundBoxes(img);
+      const items=[];
+      let i=0;
+      for(const box of boxes){
+        i++;
+        document.getElementById('procTitle').textContent='Removing backgrounds…';
+        document.getElementById('procSub').textContent=`Item ${i} of ${boxes.length}`;
+        const canvas=await cropWithBackgroundRemoval(img,box,bgColor);
+        const {category,confidence}=await classifyCrop(canvas);
+        items.push({
+          id:idCounter++,
+          canvas,
+          category,
+          name:catLabel(category).replace(/s$/,''),
+          color:COLOR_GUESSES[Math.floor(Math.random()*COLOR_GUESSES.length)],
+          confidence,
+          rejected:false
+        });
+      }
+      if(items.length===0){
+        showToast('Could not separate items — try more contrast against the background, or more space between items.');
+      }
+      resolve(items);
+    };
+    img.src=batchFile.url;
+  });
+}
+
+function getPixel(data,w,x,y){
+  const i=(y*w+x)*4;
+  return {r:data[i],g:data[i+1],b:data[i+2]};
+}
+function averageColor(samples){
+  let r=0,g=0,b=0;
+  samples.forEach(s=>{r+=s.r;g+=s.g;b+=s.b;});
+  const n=samples.length||1;
+  return {r:r/n,g:g/n,b:b/n};
+}
+function colorDist(a,b){
+  return Math.sqrt((a.r-b.r)**2+(a.g-b.g)**2+(a.b-b.b)**2);
+}
+function boxesClose(a,b,gap){
+  return !(a.maxX+gap<b.minX || b.maxX+gap<a.minX || a.maxY+gap<b.minY || b.maxY+gap<a.minY);
+}
+function mergeTwoBoxes(a,b){
+  return{minX:Math.min(a.minX,b.minX),maxX:Math.max(a.maxX,b.maxX),
+         minY:Math.min(a.minY,b.minY),maxY:Math.max(a.maxY,b.maxY),count:a.count+b.count};
+}
+function mergeCloseBoxes(boxes,gap){
+  let list=boxes.slice(), merged=true;
+  while(merged){
+    merged=false;
+    outer:
+    for(let i=0;i<list.length;i++){
+      for(let j=i+1;j<list.length;j++){
+        if(boxesClose(list[i],list[j],gap)){
+          const m=mergeTwoBoxes(list[i],list[j]);
+          list.splice(j,1);list.splice(i,1);list.push(m);
+          merged=true;break outer;
+        }
+      }
+    }
+  }
+  return list;
+}
+
+// Analyzes the photo at a reduced working resolution (fast), finds
+// item bounding boxes via background-subtraction + connected
+// components, then scales those boxes back up to full resolution
+// so the final crops stay sharp.
+function segmentForegroundBoxes(img){
+  const maxDim=700;
+  const scale=Math.min(1, maxDim/Math.max(img.naturalWidth,img.naturalHeight));
+  const w=Math.max(1,Math.round(img.naturalWidth*scale));
+  const h=Math.max(1,Math.round(img.naturalHeight*scale));
+  const work=document.createElement('canvas');
+  work.width=w;work.height=h;
+  const wctx=work.getContext('2d');
+  wctx.drawImage(img,0,0,w,h);
+  const imgData=wctx.getImageData(0,0,w,h);
+  const data=imgData.data;
+
+  // Sample the border to estimate the background color.
+  const borderSamples=[];
+  const step=Math.max(2,Math.round(Math.max(w,h)/150));
+  for(let x=0;x<w;x+=step){
+    borderSamples.push(getPixel(data,w,x,0));
+    borderSamples.push(getPixel(data,w,x,h-1));
+  }
+  for(let y=0;y<h;y+=step){
+    borderSamples.push(getPixel(data,w,0,y));
+    borderSamples.push(getPixel(data,w,w-1,y));
+  }
+  const bg=averageColor(borderSamples);
+
+  // Build a foreground mask by comparing every pixel to the background color.
+  const threshold=42;
+  const mask=new Uint8Array(w*h);
+  for(let i=0;i<w*h;i++){
+    const r=data[i*4],g=data[i*4+1],b=data[i*4+2];
+    mask[i]=colorDist({r,g,b},bg)>threshold?1:0;
+  }
+
+  // Connected-component flood fill to find each distinct item blob.
+  const visited=new Uint8Array(w*h);
+  const blobs=[];
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const idx=y*w+x;
+      if(mask[idx] && !visited[idx]){
+        let minX=x,maxX=x,minY=y,maxY=y,count=0;
+        const stack=[idx];
+        visited[idx]=1;
+        while(stack.length){
+          const cur=stack.pop();
+          const cx=cur%w, cy=(cur/w)|0;
+          count++;
+          if(cx<minX)minX=cx; if(cx>maxX)maxX=cx;
+          if(cy<minY)minY=cy; if(cy>maxY)maxY=cy;
+          if(cx>0 && !visited[cur-1] && mask[cur-1]){visited[cur-1]=1;stack.push(cur-1);}
+          if(cx<w-1 && !visited[cur+1] && mask[cur+1]){visited[cur+1]=1;stack.push(cur+1);}
+          if(cy>0 && !visited[cur-w] && mask[cur-w]){visited[cur-w]=1;stack.push(cur-w);}
+          if(cy<h-1 && !visited[cur+w] && mask[cur+w]){visited[cur+w]=1;stack.push(cur+w);}
+        }
+        blobs.push({minX,maxX,minY,maxY,count});
+      }
+    }
+  }
+
+  // Drop noise specks, then merge fragments that likely belong to
+  // the same item (folds/shadows can otherwise split one item in two).
+  const minArea=w*h*0.004;
+  let filtered=blobs.filter(b=>b.count>minArea);
+  filtered=mergeCloseBoxes(filtered, Math.max(w,h)*0.02);
+
+  // Discard a blob that's basically the whole frame — that usually
+  // means the background wasn't uniform enough to separate cleanly.
+  filtered=filtered.filter(b=>(b.maxX-b.minX)*(b.maxY-b.minY) < w*h*0.85);
+
+  filtered.sort((a,b)=>(b.maxX-b.minX)*(b.maxY-b.minY)-(a.maxX-a.minX)*(a.maxY-a.minY));
+  filtered=filtered.slice(0,6);
+
+  const invScale=1/scale;
+  const pad=0.08;
+  const boxes=filtered.map(b=>{
+    const bw=(b.maxX-b.minX+1), bh=(b.maxY-b.minY+1);
+    const px=bw*pad, py=bh*pad;
+    const x=Math.max(0,b.minX-px)*invScale;
+    const y=Math.max(0,b.minY-py)*invScale;
+    const ww=Math.min(w-Math.max(0,b.minX-px),bw+px*2)*invScale;
+    const hh=Math.min(h-Math.max(0,b.minY-py),bh+py*2)*invScale;
+    return {x,y,w:ww,h:hh};
+  });
+
+  return {boxes, bgColor:bg};
+}
+
+// Crops to the item's bounding box at full resolution, then removes
+// that item's actual background pixel-by-pixel (not a blanket filter)
+// before compositing onto a clean white square.
+// Tries real neural background removal first (clean, accurate edges).
+// If that model failed to load or errors on a specific image, falls
+// back to the color-distance cutout so the app still works either way.
+async function cropWithBackgroundRemoval(img,box,bgColor){
+  const bw=Math.max(1,Math.round(box.w)), bh=Math.max(1,Math.round(box.h));
+  const work=document.createElement('canvas');
+  work.width=bw;work.height=bh;
+  const wctx=work.getContext('2d');
+  wctx.drawImage(img,box.x,box.y,box.w,box.h,0,0,bw,bh);
+
+  let sourceCanvas=work;
+
+  if(bgRemovalReady && imglyRemoveBackground){
+    try{
+      const blob=await new Promise(res=>work.toBlob(res,'image/png'));
+      const resultBlob=await imglyRemoveBackground(blob);
+      const resultUrl=URL.createObjectURL(resultBlob);
+      const resultImg=await loadImageFromSrc(resultUrl);
+      const composed=document.createElement('canvas');
+      composed.width=bw;composed.height=bh;
+      const cctx=composed.getContext('2d');
+      cctx.fillStyle='#ffffff';
+      cctx.fillRect(0,0,bw,bh);
+      cctx.drawImage(resultImg,0,0,bw,bh);
+      sourceCanvas=composed;
+      URL.revokeObjectURL(resultUrl);
+    }catch(e){
+      console.warn('Neural background removal failed for this item, using basic cutout instead.',e);
+      sourceCanvas=applyColorDistanceCutout(work,bgColor);
+    }
+  } else {
+    sourceCanvas=applyColorDistanceCutout(work,bgColor);
+  }
+
+  const out=document.createElement('canvas'), s=400;
+  out.width=s;out.height=s;
+  const octx=out.getContext('2d');
+  octx.fillStyle='#ffffff';octx.fillRect(0,0,s,s);
+  const sc=Math.min(s/bw,s/bh)*0.88;
+  const dw=bw*sc, dh=bh*sc, dx=(s-dw)/2, dy=(s-dh)/2;
+  octx.filter='contrast(1.06) brightness(1.04) saturate(1.05)';
+  octx.drawImage(sourceCanvas,0,0,bw,bh,dx,dy,dw,dh);
+  octx.filter='none';
+  return out;
+}
+
+// Fallback: the earlier color-distance approach, kept only for when
+// the neural model can't load (e.g. no internet on first visit).
+function applyColorDistanceCutout(work,bgColor){
+  const bw=work.width, bh=work.height;
+  const wctx=work.getContext('2d');
+  const imgData=wctx.getImageData(0,0,bw,bh);
+  const data=imgData.data;
+  const threshold=42;
+  for(let i=0;i<data.length;i+=4){
+    const dist=colorDist({r:data[i],g:data[i+1],b:data[i+2]},bgColor);
+    if(dist<=threshold){
+      data[i]=255;data[i+1]=255;data[i+2]=255;
+    }
+  }
+  wctx.putImageData(imgData,0,0);
+  return work;
+}
+
+/* ============================================================
+   REVIEW
+   ============================================================ */
+function renderReview(){
+  const grid=document.getElementById('itemGrid');
+  grid.innerHTML='';
+  document.getElementById('reviewCount').textContent=`${pendingItems.filter(i=>!i.rejected).length} items`;
+  pendingItems.forEach(item=>{
+    const card=document.createElement('div');
+    card.className='item-card'+(item.rejected?' rejected':'');
+    const confClass=item.confidence>.5?'conf-high':'conf-low';
+    const confLabel=item.confidence>.5?'AI is confident':'Please check category';
+    const thumb=document.createElement('div');thumb.className='item-thumb';
+    const badge=document.createElement('span');badge.className=`conf-badge ${confClass}`;badge.textContent=confLabel;
+    thumb.appendChild(badge);thumb.appendChild(item.canvas);
+    const body=document.createElement('div');body.className='item-body';
+    const nameIn=document.createElement('input');nameIn.value=item.name;nameIn.placeholder='Item name';
+    nameIn.oninput=()=>item.name=nameIn.value;
+    const catSel=document.createElement('select');
+    CATEGORIES.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.label;if(c.id===item.category)o.selected=true;catSel.appendChild(o);});
+    catSel.onchange=()=>item.category=catSel.value;
+    const colSel=document.createElement('select');
+    COLOR_GUESSES.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;if(c===item.color)o.selected=true;colSel.appendChild(o);});
+    colSel.onchange=()=>item.color=colSel.value;
+    body.appendChild(nameIn);body.appendChild(catSel);body.appendChild(colSel);
+    const footer=document.createElement('div');footer.className='item-footer';
+    const tog=document.createElement('button');
+    tog.className='small-link'+(item.rejected?' restore':'');
+    tog.textContent=item.rejected?'Restore':'Not an item — discard';
+    tog.onclick=()=>{item.rejected=!item.rejected;renderReview();};
+    footer.appendChild(tog);
+    card.appendChild(thumb);card.appendChild(body);card.appendChild(footer);
+    grid.appendChild(card);
+  });
+}
+document.getElementById('backToUploadBtn').onclick=()=>showView('view-upload');
+document.getElementById('confirmBtn').onclick=async()=>{
+  const accepted=pendingItems.filter(i=>!i.rejected);
+  if(accepted.length===0){showToast('Nothing to save — restore at least one item.');return;}
+  const btn=document.getElementById('confirmBtn');
+  btn.disabled=true;btn.textContent='Saving…';
+  if(sb){
+    try{
+      const rows=accepted.map(item=>({
+        client_name:currentProfile.name,
+        name:item.name,category:item.category,color:item.color,
+        confidence:item.confidence,image_data:item.canvas.toDataURL('image/jpeg',0.82)
+      }));
+      const {error}=await sb.from('closet_items').insert(rows);
+      if(error) throw error;
+      showToast(`${accepted.length} item${accepted.length>1?'s':''} saved to your closet ✓`);
+    }catch(e){
+      showToast('Save failed: '+e.message);
+      btn.disabled=false;btn.textContent='Save to closet';
+      return;
+    }
+  } else {
+    showToast('Connect the database (top banner) to save permanently.');
+  }
+  pendingItems=[];
+  btn.disabled=false;btn.textContent='Save to closet';
+  buildNavForRole();
+  await loadCloset();
+  showView('view-closet');
+};
+
+/* ============================================================
+   STYLIST: CLIENT LIST
+   ============================================================ */
+async function loadClientList(){
+  if(!sb) return;
+  const list=document.getElementById('clientList');
+  list.innerHTML='<p style="color:var(--ash);font-size:13px;">Loading…</p>';
+  try{
+    const {data:items,error}=await sb.from('closet_items').select('client_name');
+    if(error) throw error;
+    const counts={};
+    (items||[]).forEach(i=>counts[i.client_name]=(counts[i.client_name]||0)+1);
+    const names=Object.keys(counts);
+    list.innerHTML='';
+    document.getElementById('clientCount').textContent=`${names.length} clients`;
+    if(names.length===0){
+      list.innerHTML='<div class="empty-state"><h3>No clients yet</h3><p>Once a client catalogs items, they will appear here.</p></div>';
+      return;
+    }
+    names.forEach(name=>{
+      const card=document.createElement('button');
+      card.className='client-card';
+      card.innerHTML=`<div class="cname">${name}</div><div class="ccount mono">${counts[name]} items catalogued</div>`;
+      card.onclick=()=>{
+        selectedClientName=name;
+        loadCloset();
+        showView('view-closet');
+      };
+      list.appendChild(card);
+    });
+  }catch(e){
+    list.innerHTML=`<p style="color:var(--clay);font-size:13px;">Could not load clients: ${e.message}</p>`;
+  }
+}
+
+/* ============================================================
+   CLOSET (scoped to selectedClientName)
+   ============================================================ */
+async function loadCloset(){
+  if(!sb || !selectedClientName) return;
+  try{
+    const {data,error}=await sb.from('closet_items').select('*')
+      .eq('client_name',selectedClientName).order('created_at',{ascending:false});
+    if(error) throw error;
+    closetItems=data||[];
+  }catch(e){showToast('Could not load closet: '+e.message);}
+
+  if(currentProfile.role==='stylist'){
+    document.getElementById('closetTitle').textContent=selectedClientName+"'s Closet";
+    document.getElementById('closetSub').textContent='Browsing as stylist.';
+  } else {
+    document.getElementById('closetTitle').textContent='The Closet';
+    document.getElementById('closetSub').textContent='Everything you have catalogued so far.';
+  }
+  renderClosetFilters();
+  renderCloset();
+}
+function renderClosetFilters(){
+  const bar=document.getElementById('closetFilters');
+  bar.innerHTML='';
+  bar.appendChild(makeChip('All','all'));
+  [...new Set(closetItems.map(i=>i.category))].forEach(id=>bar.appendChild(makeChip(catLabel(id),id)));
+  const s=document.createElement('input');
+  s.className='search-input';s.placeholder='Search items…';
+  s.oninput=()=>renderCloset(s.value);
+  bar.appendChild(s);
+}
+function makeChip(label,id){
+  const c=document.createElement('button');
+  c.className='chip'+(activeFilter===id?' active':'');
+  c.textContent=label;
+  c.onclick=()=>{activeFilter=id;renderClosetFilters();renderCloset();};
+  return c;
+}
+function renderCloset(search=''){
+  document.getElementById('closetCount').textContent=`${closetItems.length} items`;
+  const body=document.getElementById('closetBody');
+  body.innerHTML='';
+  let items=closetItems;
+  if(activeFilter!=='all')items=items.filter(i=>i.category===activeFilter);
+  if(search)items=items.filter(i=>(i.name+' '+i.color).toLowerCase().includes(search.toLowerCase()));
+  if(!items.length){
+    body.innerHTML=`<div class="empty-state"><h3>Nothing here yet</h3><p>Process a batch to start filling the rail.</p></div>`;
+    return;
+  }
+  const grid=document.createElement('div');grid.className='closet-grid';
+  items.forEach(item=>{
+    const wrap=document.createElement('div');
+    const hook=document.createElement('div');hook.className='hook';
+    const card=document.createElement('div');card.className='garment-card';
+    const thumb=document.createElement('div');thumb.className='garment-thumb';
+    const imgEl=document.createElement('img');
+    imgEl.src=item.image_data||'';imgEl.alt=item.name;
+    thumb.appendChild(imgEl);
+    const info=document.createElement('div');info.className='garment-info';
+    info.innerHTML=`<div class="cat">${catLabel(item.category).toUpperCase()}</div><div class="nm">${item.name} — ${item.color}</div>`;
+    card.appendChild(thumb);card.appendChild(info);
+    wrap.appendChild(hook);wrap.appendChild(card);
+    grid.appendChild(wrap);
+  });
+  body.appendChild(grid);
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+initSupabase();
+</script>
+</body>
+</html>
